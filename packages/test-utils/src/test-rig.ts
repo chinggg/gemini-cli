@@ -447,6 +447,19 @@ export class TestRig {
     const userGeminiDir = join(this.homeDir!, GEMINI_DIR);
     mkdirSync(userGeminiDir, { recursive: true });
 
+    let defaultAuthType = 'gemini-api-key';
+    if (!process.env['GEMINI_API_KEY']) {
+      const realHome = os.homedir();
+      const realOauthCredsPath = join(realHome, '.gemini', 'oauth_creds.json');
+      if (fs.existsSync(realOauthCredsPath)) {
+        defaultAuthType = 'oauth-personal';
+        fs.copyFileSync(
+          realOauthCredsPath,
+          join(userGeminiDir, 'oauth_creds.json'),
+        );
+      }
+    }
+
     // In sandbox mode, use an absolute path for telemetry inside the container
     // The container mounts the test directory at the same path as the host
     const telemetryPath = join(this.homeDir!, 'telemetry.log'); // Always use home directory for telemetry
@@ -466,7 +479,7 @@ export class TestRig {
         },
         security: {
           auth: {
-            selectedType: 'gemini-api-key',
+            selectedType: defaultAuthType,
           },
           folderTrust: {
             enabled: false,

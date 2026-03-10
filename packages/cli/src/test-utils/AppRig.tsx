@@ -238,8 +238,25 @@ export class AppRig {
       await this.config!.initialize();
       // Since we mocked useAuthCommand, we must manually trigger the first
       // refreshAuth to ensure contentGenerator is initialized.
-      await this.config!.refreshAuth(AuthType.USE_GEMINI);
+      await this.config!.refreshAuth(this.getAuthType());
     });
+  }
+
+  private getAuthType(): AuthType {
+    if (this.options.fakeResponsesPath || process.env['GEMINI_API_KEY']) {
+      return AuthType.USE_GEMINI;
+    }
+    const realOauthCredsPath = path.join(
+      os.homedir(),
+      '.gemini',
+      'oauth_creds.json',
+    );
+    if (fs.existsSync(realOauthCredsPath)) {
+      return AuthType.LOGIN_WITH_GOOGLE;
+    }
+    throw new Error(
+      'GEMINI_API_KEY or Google Auth must be set in the environment for live model tests.',
+    );
   }
 
   private setupEnvironment() {
@@ -251,25 +268,35 @@ export class AppRig {
       vi.stubEnv('GEMINI_API_KEY', 'test-api-key');
       MockShellExecutionService.setPassthrough(false);
     } else {
-      if (!process.env['GEMINI_API_KEY']) {
-        throw new Error(
-          'GEMINI_API_KEY must be set in the environment for live model tests.',
+      const authType = this.getAuthType();
+      if (authType === AuthType.LOGIN_WITH_GOOGLE) {
+        const testGeminiDir = path.join(this.testDir, '.gemini');
+        fs.mkdirSync(testGeminiDir, { recursive: true });
+        const realOauthCredsPath = path.join(
+          os.homedir(),
+          '.gemini',
+          'oauth_creds.json',
+        );
+        fs.copyFileSync(
+          realOauthCredsPath,
+          path.join(testGeminiDir, 'oauth_creds.json'),
         );
       }
       // For live tests, we allow falling through to the real shell service if no mock matches
       MockShellExecutionService.setPassthrough(true);
     }
-    vi.stubEnv('GEMINI_DEFAULT_AUTH_TYPE', AuthType.USE_GEMINI);
+    vi.stubEnv('GEMINI_DEFAULT_AUTH_TYPE', this.getAuthType());
   }
 
   private createRigSettings(): LoadedSettings {
+    const authType = this.getAuthType();
     return createMockSettings({
       user: {
         path: path.join(this.testDir, '.gemini', 'user_settings.json'),
         settings: {
           security: {
             auth: {
-              selectedType: AuthType.USE_GEMINI,
+              selectedType: authType,
               useExternal: true,
             },
             folderTrust: {
@@ -286,7 +313,7 @@ export class AppRig {
       merged: {
         security: {
           auth: {
-            selectedType: AuthType.USE_GEMINI,
+            selectedType: authType,
             useExternal: true,
           },
           folderTrust: {
